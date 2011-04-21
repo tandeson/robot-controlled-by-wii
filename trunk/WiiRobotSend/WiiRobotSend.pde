@@ -1,80 +1,128 @@
- /*Program to gather the nunchuk data and place in a small packet to send it wirelessly to the
-    receiver.
-    The nunchuk code was borrowed from http://www.windmeadow.com/node/42  */
-    // This program is like sender program 5 except the accleration values are not adjusted to the left 2 places
-    // after the reading. This keeps the reading in a smaller range.
-    #include <Wire.h>;        // Using the Wire library because of the two wire communication to the nunchuk.
+/*
+    Program to gather the nunchuk data and place in a small packet to send it wirelessly to the
+    receiver. 
+     
+    The nunchuk code was borrowed from http://www.windmeadow.com/node/42 
     
+    This program is like sender program 5 except the accleration values are not adjusted to the left 2 places
+    after the reading. This keeps the reading in a smaller range. 
+*/
+ 
+// Using the Wire library because of the two wire communication to the nunchuk.
+#include <Wire.h>;        
     
-    int UDintensity = 0;      // Variables to store the joystick/accelerometer readings
-    int LRintensity = 0;
-    int rightMotorVal;           // Variable to store the right Motors speed value.
-    int leftMotorVal;            // Variable to store the left Motor speed value.
-    int x;                    // Variables
-    int y;
-    int joy_x_axis; 
-    int joy_y_axis; 
-    int accel_x_axis; 
-    int accel_y_axis; 
-    int accel_z_axis; 
-    int z_button; 
-    int c_button; 
+// Variables to store the joystick/accelerometer readings
+int UDintensity = 0;      
+int LRintensity = 0;
+  
+// Variable to store the left and right Motors speed value.
+int rightMotorVal;           
+int leftMotorVal;            
+
+// normalized input Variables
+int x;                    
+int y;
+
+// Wii Joystick x and y axies.
+int joy_x_axis; 
+int joy_y_axis; 
+
+// Wii accelerometer data
+int accel_x_axis; 
+int accel_y_axis; 
+int accel_z_axis;
+
+// Wii Button data.
+int z_button; 
+int c_button; 
+
+void setup()
+{
+  
+  Serial.begin(38400);
+  
+  // Unused Varraible?
+  int button1 = 0;
+  
+  // Call the subroutine to set up the power pins on the nunchuk connection.
+  nunchuk_setpowerpins();    
+  // Call the subroutine to begin communicating with the nunchuk.
+  nunchuk_init();
+  
+  Serial.print("Nunchuck ready\n");
+}
+
+void loop()
+{
+    // Call the subroutine to read the data from the nunchuk.
+    nunchuk_get_data();
+
+    // This subroutine also reads the data and puts the read data into the correct variables.      
+    nunchuk_print_data();            
     
-    void setup(){
-      Serial.begin(38400);
-      int button1 = 0;
-      nunchuk_setpowerpins();    // Call the subroutine to set up the power pins on the nunchuk connection.
-      nunchuk_init();            // Call the subroutine to begin communicating with the nunchuk.
-      Serial.print("Nunchuck ready\n");
-    }
-    
-    void loop(){
-      nunchuk_get_data();              // Call the subroutine to read the data from the nunchuk.
-      nunchuk_print_data();            // This subroutine also reads the data and puts the read data
-                                     // into the correct variables.
-      if (nunchuk_zbutton() == 1){    // If the Z button is pushed then use the data from the accelerometer
-        y = nunchuk_accely();          // to control the motors.
+    // Determine which data source to use.                        
+    if (nunchuk_zbutton() == 1)
+    {
+        // If the Z button is pushed then use the data from the accelerometer to control the motors. 
+        
+        // Get Wii Numchuck data.
+        y = nunchuk_accely();          
         x = nunchuk_accelx();
+        
+        // Check for Mix / Max values, and limit if too big or too small.
         if (y < 80) y = 80;
         if (y > 180) y = 180;
         if (x < 80) x = 80;
         if (x > 180) x = 180;
-      
-      // map the incoming values to a symmetric scale of -100 to 100
-          y = map(y,80,180,-100,100);
-          x = map(x,80,180,-100,100);
-      }
-        else{
-          y = nunchuk_joyy();            // If the Z button is not pushed then use the data from the joystick
-          x = nunchuk_joyx();            // to control the motors.
-      
-     // map the incoming values to a symmetric scale of -100 to 100
-          y = map(y,28,225,-100,100);
-          x = map(x,28,225,-100,100);
-        }
-        
-           if(y >-10 && y < 10 && x <  10 && x > - 10) {      // This is the deadspot
-             Serial.print (254, BYTE);                          // Send the Stop command to the other xbee
-             Serial.print (90, BYTE);
-             Serial.print (255, BYTE);                                            
-             Serial.print (90, BYTE);                                           
-             delay(150);                                        // Give time to send
-           }
-        else {
-         
-          mix( y, x);            // If not in the dead band then call the subroutine
-      
-          LRintensity = map ( rightMotorVal, -100, 100, 50, 140);  // "mix" to calculate the values needed to move the 
-          UDintensity = map ( leftMotorVal, -100, 100, 50, 140);   // motors with the correct speed and direction.
-        
-          
-           Serial.print (254, BYTE);                                 // Send the Stop command to the other xbee
-           Serial.print (UDintensity, BYTE);
-           Serial.print (255, BYTE);                                            
-           Serial.print (LRintensity, BYTE);                                           
-           delay(150);  
-        }     
+  
+        // map the incoming values to a symmetric scale of -100 to 100
+        y = map(y,80,180,-100,100);
+        x = map(x,80,180,-100,100);
     }
+    else 
+    {
+        // If the Z button is not pushed then use the data from the joystick to control the motors.
+        y = nunchuk_joyy();            
+        x = nunchuk_joyx();            
+  
+        // map the incoming values to a symmetric scale of -100 to 100
+        y = map(y,28,225,-100,100);
+        x = map(x,28,225,-100,100);
+    }
+    
+    if(y >-10 && y < 10 && x <  10 && x > - 10) 
+    {    
+        // This is the deadspot      
+        
+        // Send the Stop command to the other xbee
+        Serial.print (254, BYTE);                          
+        Serial.print (90, BYTE);
+        Serial.print (255, BYTE);                                            
+        Serial.print (90, BYTE);
+        
+        // Give time to send
+        delay(150);                                        
+    }
+    else 
+    {
+        // If not in the dead band then call the subroutine
+     
+        // "mix" to calculate the values needed to move the motors with the correct speed and direction. 
+        mix( y, x);            
+        LRintensity = map ( rightMotorVal, -100, 100, 50, 140);  
+        UDintensity = map ( leftMotorVal, -100, 100, 50, 140);   // 
+    
+        // Send the Stop command to the other xbee (Old Comment?)
+        Serial.print (254, BYTE);                                 
+        Serial.print (UDintensity, BYTE);
+        Serial.print (255, BYTE);                                            
+        Serial.print (LRintensity, BYTE);
+        
+        // Give time to send        
+        delay(150);  
+    }     
+}
+    
     //======================================================================================================================================================================================================//
     //Do not modify!!!!!!!!
     //======================================================================================================================================================================================================//
@@ -242,5 +290,3 @@
         }
       }
      
-
-
