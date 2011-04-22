@@ -1,44 +1,53 @@
 /*
     Program to gather the nunchuk data and place in a small packet to send it wirelessly to the
-    receiver. 
-     
-    The nunchuk code was borrowed from http://www.windmeadow.com/node/42 
-    
+    receiver.
+
+    The nunchuk code was borrowed from http://www.windmeadow.com/node/42
+
     This program is like sender program 5 except the accleration values are not adjusted to the left 2 places
-    after the reading. This keeps the reading in a smaller range. 
+    after the reading. This keeps the reading in a smaller range.
 */
- 
+
 // Using the Wire library because of the two wire communication to the nunchuk.
-#include <Wire.h>;        
+#include <Wire.h>;
 
 //------------------- Constants / Defines -------------------
 
-//------------------- Global Variables -------------------  
+// Wii Nunchuk allowable value range.
+const int WII_NUNCHUK_MIN = 80;
+const int WII_NUNCHUK_MAX = 180;
 
-// Variables to store the joystick/accelerometer readings
-int UDintensity = 0;      
-int LRintensity = 0;
-  
+// Wii Joystick allowable value range.
+const int WII_JOYSTICK_MIN = 28;
+const int WII_JOYSTICK_MAX = 225;
+
+// Normalized value range.
+const int NORMALIZED_RANGE_MAX = 100;
+const int NORMALIZED_RANGE_MIN = -100;
+
+#define SERIAL_DATA_SPEED_38400_BPS  (38400)
+//------------------- Global Variables -------------------
+
 // Variable to store the left and right Motors speed value.
-int rightMotorVal;           
-int leftMotorVal;            
+int rightMotorVal;
+int leftMotorVal;
 
 // normalized input Variables
 int x;                    
 int y;
 
 // Wii Joystick x and y axies.
-int joy_x_axis; 
-int joy_y_axis; 
+int joy_x_axis;
+int joy_y_axis;
 
 // Wii accelerometer data
-int accel_x_axis; 
-int accel_y_axis; 
+int accel_x_axis;
+int accel_y_axis;
 int accel_z_axis;
 
 // Wii Button data.
-int z_button; 
-int c_button; 
+int z_button;
+int c_button;
 
 //------------------- Functions -------------------
 
@@ -48,17 +57,11 @@ int c_button;
 */
 void setup()
 {
-  
-  Serial.begin(38400);
-  
-  // Unused Varraible?
-  int button1 = 0;
-  
-  // Call the subroutine to set up the power pins on the nunchuk connection.
-  nunchuk_setpowerpins();    
-  // Call the subroutine to begin communicating with the nunchuk.
+  Serial.begin(SERIAL_DATA_SPEED_38400_BPS);
+ 
+  // Setup the Wii nunchuk power, and start communicating.
+  nunchuk_setpowerpins();
   nunchuk_init();
-  
   Serial.print("Nunchuck ready\n");
 }
 
@@ -68,73 +71,102 @@ void setup()
 */
 void loop()
 {
-    // Call the subroutine to read the data from the nunchuk.
-    nunchuk_get_data();
-
-    // This subroutine also reads the data and puts the read data into the correct variables.      
-    nunchuk_print_data();            
-    
-    // Determine which data source to use.                        
-    if (nunchuk_zbutton() == 1)
+    // Call the subroutine to read the data from the nunchuk, if we get new data.. do stuff.
+    if (nunchuk_get_data() )
     {
-        // If the Z button is pushed then use the data from the accelerometer to control the motors. 
-        
-        // Get Wii Numchuck data.
-        y = nunchuk_accely();          
-        x = nunchuk_accelx();
-        
-        // Check for Mix / Max values, and limit if too big or too small.
-        if (y < 80) y = 80;
-        if (y > 180) y = 180;
-        if (x < 80) x = 80;
-        if (x > 180) x = 180;
-  
-        // map the incoming values to a symmetric scale of -100 to 100
-        y = map(y,80,180,-100,100);
-        x = map(x,80,180,-100,100);
-    }
-    else 
-    {
-        // If the Z button is not pushed then use the data from the joystick to control the motors.
-        y = nunchuk_joyy();            
-        x = nunchuk_joyx();            
-  
-        // map the incoming values to a symmetric scale of -100 to 100
-        y = map(y,28,225,-100,100);
-        x = map(x,28,225,-100,100);
-    }
     
-    if(y >-10 && y < 10 && x <  10 && x > - 10) 
-    {    
-        // This is the deadspot      
+        // This subroutine also reads the data and puts the read data into the correct variables.
+        nunchuk_print_data();
         
-        // Send the Stop command to the other xbee
-        Serial.print (254, BYTE);                          
-        Serial.print (90, BYTE);
-        Serial.print (255, BYTE);                                            
-        Serial.print (90, BYTE);
-        
-        // Give time to send
-        delay(150);                                        
-    }
-    else 
-    {
-        // If not in the dead band then call the subroutine
-     
-        // "mix" to calculate the values needed to move the motors with the correct speed and direction. 
-        mix( y, x);            
-        LRintensity = map ( rightMotorVal, -100, 100, 50, 140);  
-        UDintensity = map ( leftMotorVal, -100, 100, 50, 140);   // 
+        // Determine which data source to use.
+        if (nunchuk_zbutton() == 1)
+        {
+            // If the Z button is pushed then use the data from the accelerometer to control the motors.
+            
+            // Get Wii Numchuck data.
+            y = nunchuk_accely();
+            x = nunchuk_accelx();
+            
+            // Check for Mix / Max values, and limit if too big or too small.
+            y = constrain(y, WII_NUNCHUK_MIN, WII_NUNCHUK_MAX);
+            x = constrain(x, WII_NUNCHUK_MIN, WII_NUNCHUK_MAX);
     
-        // Send the Stop command to the other xbee (Old Comment?)
-        Serial.print (254, BYTE);                                 
-        Serial.print (UDintensity, BYTE);
-        Serial.print (255, BYTE);                                            
-        Serial.print (LRintensity, BYTE);
+            // map the incoming values to a symmetric scale of NORMALIZED_RANGE_MIN to NORMALIZED_RANGE_MAX
+            y = map(
+                y,
+                WII_NUNCHUK_MIN,
+                WII_NUNCHUK_MAX,
+                NORMALIZED_RANGE_MIN,
+                NORMALIZED_RANGE_MAX
+            );
+            
+            x = map(
+                x,
+                WII_NUNCHUK_MIN,
+                WII_NUNCHUK_MAX,
+                NORMALIZED_RANGE_MIN,
+                NORMALIZED_RANGE_MAX
+            );
+        }
+        else 
+        {
+            // If the Z button is not pushed then use the data from the joystick to control the motors.
+            y = nunchuk_joyy();
+            x = nunchuk_joyx();
+      
+            // map the incoming values to a symmetric scale of NORMALIZED_RANGE_MIN to NORMALIZED_RANGE_MAX
+            y = map(
+                y,
+                WII_JOYSTICK_MIN,
+                WII_JOYSTICK_MAX,
+                NORMALIZED_RANGE_MIN,
+                NORMALIZED_RANGE_MAX
+            );
+            
+            x = map(
+                x,
+                WII_JOYSTICK_MIN,
+                WII_JOYSTICK_MAX,
+                NORMALIZED_RANGE_MIN,
+                NORMALIZED_RANGE_MAX
+            );
+        }
         
-        // Give time to send        
-        delay(150);  
-    }     
+        if(y >-10 && y < 10 && x <  10 && x > - 10)
+        {
+            // This is the deadspot
+            
+            // Send the Stop command to the other xbee
+            Serial.print (254, BYTE);
+            Serial.print (90, BYTE);
+            Serial.print (255, BYTE);
+            Serial.print (90, BYTE);
+            
+            // Give time to send
+            delay(150);
+        }
+        else 
+        {
+            // If not in the dead band then call the subroutine
+         
+            /*
+                "mix" to calculate the values needed to move the motors with the correct speed and direction. 
+                WARNING: mix() changes the value of rightMotorVal and leftMotorVal !!!
+            */
+            mix( y, x);
+            rightMotorVal = map ( rightMotorVal, NORMALIZED_RANGE_MIN, NORMALIZED_RANGE_MAX, 50, 140);
+            leftMotorVal = map ( leftMotorVal, NORMALIZED_RANGE_MIN, NORMALIZED_RANGE_MAX, 50, 140);
+        
+            // Send the Stop command to the other xbee (Old Comment?)
+            Serial.print (254, BYTE);
+            Serial.print (leftMotorVal, BYTE);
+            Serial.print (255, BYTE);
+            Serial.print (rightMotorVal, BYTE);
+            
+            // Give time to send
+            delay(150);
+        }
+    }
 }
     
 //======================================================================================================================================================================================================//
@@ -147,19 +179,23 @@ void loop()
     The static keyword is used to create variables that are visible to only one function. 
     However unlike local variables that get created and destroyed every time a function is called, 
     static variables persist beyond the function call, preserving their data between function calls. 
-
-    static uint8_t
 */
 
 //------------------- Constants / Defines -------------------
 
-#define PWRPIN 17 // 3 + 14 == Analog Pin 3        // Analog Pin 3 is the same as pin 17 on the arduino
-#define GNDPIN 16 // 2 + 14 == Analog Pin 2        // Analog Pin 2 is the same as pin 16 
+// 3 + 14 == Analog Pin 3, Analog Pin 3 is the same as pin 17 on the arduino
+#define PWRPIN (17) 
+// 2 + 14 == Analog Pin 2 , Analog Pin 2 is the same as pin 16 on the arduino
+#define GNDPIN (16)
 
-//------------------- Global Variables -------------------  
+#define WII_NUNCHUK_I2C_ADDRESS   (0x52)
+
+#define WII_NUMBER_OF_BYTES_TO_READ  (6)
+
+//------------------- Global Variables -------------------
 
 // array to store nunchuck data
-byte nunchuk_buf[6];
+byte nunchuk_buf[WII_NUMBER_OF_BYTES_TO_READ];
 
 //------------------- Functions -------------------
 
@@ -177,10 +213,10 @@ static void nunchuk_setpowerpins()
         Analog pin 2 is set to ground to provide ground to the nunchuk
     */
     digitalWrite(PWRPIN, HIGH);
-    digitalWrite(GNDPIN, LOW);                         
+    digitalWrite(GNDPIN, LOW);
     
     // 100 ms delay to allow settling of the lines.
-    delay(100);                                        
+    delay(100);
 }
 
 /*------
@@ -192,8 +228,8 @@ void nunchuk_init()
     // join i2c bus as master
     Wire.begin();
     
-    // transmit to device 0x52 
-    Wire.beginTransmission(0x52);
+    // transmit to device
+    Wire.beginTransmission(WII_NUNCHUK_I2C_ADDRESS);
     
     // sends value of 0x00 to memory address 0x40
     Wire.send(0x40); 
@@ -209,8 +245,8 @@ void nunchuk_init()
 */
 void nunchuk_send_request()
 {
-    // transmit to device 0x52. All nunchuks are assigned this address.
-    Wire.beginTransmission(0x52); 
+    // transmit to device
+    Wire.beginTransmission(WII_NUNCHUK_I2C_ADDRESS); 
 
     // sending 0x00 sets the pointer back to the lowest address in order to read multiple bytes
     Wire.send(0x00);
@@ -224,12 +260,17 @@ void nunchuk_send_request()
     Description: Receive data back from the nunchuck, returns 1 on successful read. returns 0 on failure.
                  Subroutine to read the data sent back from the nunchuk. It comes back in in 6 byte chunks.
 */
+
+// Return values for this funciton
+#define GET_DATA_OK  (1)
+#define GET_DATA_FAIL (0)
+
 int nunchuk_get_data()
 { 
-    int cnt=0;
+    int bytesReadBackCount=0;
     
     // request data from nunchuck
-    Wire.requestFrom (0x52, 6); 
+    Wire.requestFrom (WII_NUNCHUK_I2C_ADDRESS, WII_NUMBER_OF_BYTES_TO_READ); 
     
     // If there is data in the buffer then send to the arduino. 
     while (Wire.available ()) 
@@ -240,24 +281,15 @@ int nunchuk_get_data()
             Wire.receive() - Retrieve a byte that was transmitted from a slave device to
                 a master after a call to requestFrom or was transmitted from a master to a slave 
         */
-        nunchuk_buf[cnt] = nunchuk_decode_byte(Wire.receive());
-        cnt++;
+        nunchuk_buf[bytesReadBackCount] = nunchuk_decode_byte(Wire.receive());
+        bytesReadBackCount++;
     }
     
     // send request for next data payload If we received the 6 bytes, then go print them
     nunchuk_send_request(); 
 
-    // The success or failure values are not used for anything in this program
-    if (cnt >= 5) 
-    {
-        // success 
-        return 1;      
-    }
-    else
-    {
-        //failure
-        return 0; 
-    }
+    // If we got enought bytes, let the caller know.
+    return (bytesReadBackCount >= (WII_NUMBER_OF_BYTES_TO_READ - 1)) ? GET_DATA_OK  : GET_DATA_FAIL ; 
 }
 
 /*------
@@ -360,8 +392,8 @@ int nunchuk_joyy()
 */
 int nunchuk_accelx()
 {
-    // FIXME: this leaves out 2-bits of the 
-    return nunchuk_buf[2]; data
+    // FIXME: this leaves out 2-bits of the data
+    return nunchuk_buf[2]; 
 }
 
 /*------
