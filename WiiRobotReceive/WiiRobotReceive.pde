@@ -7,6 +7,14 @@
 
 //------------------- Constants / Defines -------------------
 
+// LED Pin assignments.
+const int LED_PIN_FRONT = 8;
+const int LED_PIN_BACK = 9;
+const int LED_PIN_LEFT = 10;
+const int LED_PIN_RIGHT = 11;
+
+#define SERIAL_DATA_SPEED_38400_BPS  (38400)
+
 //------------------- Global Variables ------------------- 
 
 /*
@@ -20,18 +28,10 @@ Servo rightMotor;
 int rightMotorVal;
 int leftMotorVal;
 
-// Unused? Copy / paste error?
-int x;                    
-int y;
-
 // Data read variable
 int incomingByte;
 
 // LED variables
-int frontLED = 8;
-int backLED = 9;
-int leftLED = 10;
-int rightLED = 11;
 int count = 0;
 
 //------------------- Functions -------------------
@@ -43,13 +43,13 @@ int count = 0;
 void setup()
 {
     // Setup LED pins
-    pinMode (frontLED, OUTPUT);
-    pinMode (backLED, OUTPUT);
-    pinMode (leftLED, OUTPUT);
-    pinMode (rightLED, OUTPUT);
+    pinMode (LED_PIN_FRONT, OUTPUT);
+    pinMode (LED_PIN_BACK, OUTPUT);
+    pinMode (LED_PIN_LEFT, OUTPUT);
+    pinMode (LED_PIN_RIGHT, OUTPUT);
     
     // Start Serial Communication
-    Serial.begin(38400);
+    Serial.begin(SERIAL_DATA_SPEED_38400_BPS);
     
     // Attach the left motor to  pin 5, right motor pin 4
     leftMotor.attach (5);      
@@ -96,9 +96,9 @@ void blinkLED()
 {
     if ( count < 4 )
     {
-        digitalWrite(frontLED + count,HIGH);
+        digitalWrite(LED_PIN_FRONT + count,HIGH);
         delay (20);
-        digitalWrite(frontLED + count,LOW);
+        digitalWrite(LED_PIN_FRONT + count,LOW);
         delay (20);
     }
     
