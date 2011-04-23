@@ -13,7 +13,36 @@ const int LED_PIN_BACK = 9;
 const int LED_PIN_LEFT = 10;
 const int LED_PIN_RIGHT = 11;
 
+#define NUMBER_OF_LEDS  (4)
+const int LED_pins[NUMBER_OF_LEDS] = {
+    LED_PIN_FRONT,
+    LED_PIN_BACK,
+    LED_PIN_LEFT,
+    LED_PIN_RIGHT
+};
+
+// Motor Pin Assignment
+const int MOTOR_PIN_LEFT = 5;
+const int MOTOR_PIN_RIGHT = 4;
+
+/*
+    Commands / data rates / etc
+    
+    This section MUST match between send and
+    receive code!
+    
+    ** Section Start **
+*/
 #define SERIAL_DATA_SPEED_38400_BPS  (38400)
+
+const int SERIAL_COMMAND_SET_RIGHT_MOTOR = 255;
+const int SERIAL_COMMAND_SET_LEFT_MOTOR =   254;
+
+const int MOTOR_VALUE_MIN = 50;
+const int MOTOR_VALUE_MAX = 140;
+const int MOTOR_VALUE_SPECIAL_CODE_STOP = 90;
+
+// ** Section end **
 
 //------------------- Global Variables ------------------- 
 
@@ -25,14 +54,14 @@ Servo leftMotor;
 Servo rightMotor;
 
 // Variable to store the Motor speed values.
-int rightMotorVal;
-int leftMotorVal;
+int rightMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
+int leftMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
 
 // Data read variable
-int incomingByte;
+int incomingByte = 0;
 
 // LED variables
-int count = 0;
+int blinkLedArrayIndex = 0;
 
 //------------------- Functions -------------------
 
@@ -42,18 +71,23 @@ int count = 0;
 */
 void setup()
 {
-    // Setup LED pins
-    pinMode (LED_PIN_FRONT, OUTPUT);
-    pinMode (LED_PIN_BACK, OUTPUT);
-    pinMode (LED_PIN_LEFT, OUTPUT);
-    pinMode (LED_PIN_RIGHT, OUTPUT);
-    
+    // Set LED pins to output, and ensure they are driven low.
+    for(int ledPinIndex = 0; ledPinIndex < NUMBER_OF_LEDS; ledPinIndex++)
+    {
+        pinMode(LED_pins[ledPinIndex],OUTPUT);
+        digitalWrite(LED_pins[ledPinIndex],LOW);
+    }
+
     // Start Serial Communication
     Serial.begin(SERIAL_DATA_SPEED_38400_BPS);
     
-    // Attach the left motor to  pin 5, right motor pin 4
-    leftMotor.attach (5);      
-    rightMotor.attach(4);
+    // Attach the left motor and ensure it is stopped.
+    leftMotor.attach (MOTOR_PIN_LEFT);
+    leftMotor.write(MOTOR_VALUE_SPECIAL_CODE_STOP);
+    
+    // Attach the right motor and ensure it is stopped.
+    rightMotor.attach(MOTOR_PIN_RIGHT);
+    rightMotor.write(MOTOR_VALUE_SPECIAL_CODE_STOP);
 }
 
 /*------
@@ -68,18 +102,24 @@ void loop()
         // assign bytes to the variable incomingByte
         incomingByte = Serial.read();
         
-        if (incomingByte == 254)
+        if (SERIAL_COMMAND_SET_LEFT_MOTOR == incomingByte)
         {
             leftMotorVal = Serial.read();
         }
-        else if (incomingByte == 255)
+        else if (SERIAL_COMMAND_SET_RIGHT_MOTOR == incomingByte)
         {
             rightMotorVal = Serial.read();
         }
     }
     
     // All stop command?
-    if (leftMotorVal == 90 && rightMotorVal == 90) blinkLED();
+    if (
+        (leftMotorVal == MOTOR_VALUE_SPECIAL_CODE_STOP) && 
+        (rightMotorVal == MOTOR_VALUE_SPECIAL_CODE_STOP)
+    )
+    { 
+        blinkLED();
+    }
     
     // Write the values to the motors. 
     leftMotor.write(leftMotorVal);
@@ -94,15 +134,15 @@ void loop()
 */
 void blinkLED()
 {
-    if ( count < 4 )
+    if ( blinkLedArrayIndex < NUMBER_OF_LEDS )
     {
-        digitalWrite(LED_PIN_FRONT + count,HIGH);
+        digitalWrite(LED_pins[blinkLedArrayIndex],HIGH);
         delay (20);
-        digitalWrite(LED_PIN_FRONT + count,LOW);
+        digitalWrite(LED_pins[blinkLedArrayIndex],LOW);
         delay (20);
     }
-    
-    count = count + 1;
-    if (count >= 4) count = 0;
-}
 
+    // Move to the next LED
+    blinkLedArrayIndex += 1;
+    if (blinkLedArrayIndex >= NUMBER_OF_LEDS) blinkLedArrayIndex = 0;
+}
