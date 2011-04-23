@@ -13,7 +13,8 @@
 
 //------------------- Constants / Defines -------------------
 
-// Wii Nunchuk allowable value range.
+// ---- Wii Constants ----
+// Wii Nunchuk allowable value range. (Accelerometer)
 const int WII_NUNCHUK_MIN = 80;
 const int WII_NUNCHUK_MAX = 180;
 
@@ -21,33 +22,52 @@ const int WII_NUNCHUK_MAX = 180;
 const int WII_JOYSTICK_MIN = 28;
 const int WII_JOYSTICK_MAX = 225;
 
-// Normalized value range.
-const int NORMALIZED_RANGE_MAX = 100;
-const int NORMALIZED_RANGE_MIN = -100;
+#define WII_BUTTON_PRESSED  (1)
 
+// ---- Program Constants ----
+// Normalized value range.
+const int NORMALIZED_RANGE_MIN = -100;
+const int NORMALIZED_RANGE_MAX = 100;
+
+const int NORMALIZED_DEAD_ZONE_MIN = -10;
+const int NORMALIZED_DEAD_ZONE_MAX = 10;
+
+/*
+    Commands / data rates / etc
+    
+    This section MUST match between send and
+    receive code!
+    
+    ** Section Start **
+*/
 #define SERIAL_DATA_SPEED_38400_BPS  (38400)
+
+const int SERIAL_COMMAND_SET_RIGHT_MOTOR = 255;
+const int SERIAL_COMMAND_SET_LEFT_MOTOR =   254;
+
+const int MOTOR_VALUE_MIN = 50;
+const int MOTOR_VALUE_MAX = 140;
+const int MOTOR_VALUE_SPECIAL_CODE_STOP = 90;
+
+// ** Section end **
+
 //------------------- Global Variables -------------------
 
 // Variable to store the left and right Motors speed value.
-int rightMotorVal;
-int leftMotorVal;
+int rightMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
+int leftMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
 
 // normalized input Variables
-int x;                    
-int y;
+int normalized_x = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;                    
+int normalized_y = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;
 
 // Wii Joystick x and y axies.
-int joy_x_axis;
-int joy_y_axis;
-
-// Wii accelerometer data
-int accel_x_axis;
-int accel_y_axis;
-int accel_z_axis;
+int joy_x_axis = (WII_JOYSTICK_MIN + WII_JOYSTICK_MAX) / 2;
+int joy_y_axis = (WII_JOYSTICK_MIN + WII_JOYSTICK_MAX) / 2;
 
 // Wii Button data.
-int z_button;
-int c_button;
+int z_button = 0;
+int c_button = 0;
 
 //------------------- Functions -------------------
 
@@ -62,7 +82,6 @@ void setup()
   // Setup the Wii nunchuk power, and start communicating.
   nunchuk_setpowerpins();
   nunchuk_init();
-  Serial.print("Nunchuck ready\n");
 }
 
 /*------
@@ -79,29 +98,29 @@ void loop()
         nunchuk_print_data();
         
         // Determine which data source to use.
-        if (nunchuk_zbutton() == 1)
+        if (WII_BUTTON_PRESSED == get_nunchuk_zbutton())
         {
             // If the Z button is pushed then use the data from the accelerometer to control the motors.
             
             // Get Wii Numchuck data.
-            y = nunchuk_accely();
-            x = nunchuk_accelx();
+            normalized_y = nunchuk_accely();
+            normalized_x = nunchuk_accelx();
             
             // Check for Mix / Max values, and limit if too big or too small.
-            y = constrain(y, WII_NUNCHUK_MIN, WII_NUNCHUK_MAX);
-            x = constrain(x, WII_NUNCHUK_MIN, WII_NUNCHUK_MAX);
+            normalized_y = constrain(normalized_y, WII_NUNCHUK_MIN, WII_NUNCHUK_MAX);
+            normalized_x = constrain(normalized_x, WII_NUNCHUK_MIN, WII_NUNCHUK_MAX);
     
             // map the incoming values to a symmetric scale of NORMALIZED_RANGE_MIN to NORMALIZED_RANGE_MAX
-            y = map(
-                y,
+            normalized_y = map(
+                normalized_y,
                 WII_NUNCHUK_MIN,
                 WII_NUNCHUK_MAX,
                 NORMALIZED_RANGE_MIN,
                 NORMALIZED_RANGE_MAX
             );
             
-            x = map(
-                x,
+            normalized_x = map(
+                normalized_x,
                 WII_NUNCHUK_MIN,
                 WII_NUNCHUK_MAX,
                 NORMALIZED_RANGE_MIN,
@@ -111,20 +130,20 @@ void loop()
         else 
         {
             // If the Z button is not pushed then use the data from the joystick to control the motors.
-            y = nunchuk_joyy();
-            x = nunchuk_joyx();
+            normalized_y = nunchuk_joyy();
+            normalized_x = nunchuk_joyx();
       
             // map the incoming values to a symmetric scale of NORMALIZED_RANGE_MIN to NORMALIZED_RANGE_MAX
-            y = map(
-                y,
+            normalized_y = map(
+                normalized_y,
                 WII_JOYSTICK_MIN,
                 WII_JOYSTICK_MAX,
                 NORMALIZED_RANGE_MIN,
                 NORMALIZED_RANGE_MAX
             );
             
-            x = map(
-                x,
+            normalized_x = map(
+                normalized_x,
                 WII_JOYSTICK_MIN,
                 WII_JOYSTICK_MAX,
                 NORMALIZED_RANGE_MIN,
@@ -132,15 +151,18 @@ void loop()
             );
         }
         
-        if(y >-10 && y < 10 && x <  10 && x > - 10)
+        if(
+            (normalized_y < NORMALIZED_DEAD_ZONE_MAX) && (normalized_y > NORMALIZED_DEAD_ZONE_MIN) && 
+            (normalized_x < NORMALIZED_DEAD_ZONE_MAX) && (normalized_x > NORMALIZED_DEAD_ZONE_MIN)
+        )
         {
             // This is the deadspot
             
             // Send the Stop command to the other xbee
-            Serial.print (254, BYTE);
-            Serial.print (90, BYTE);
-            Serial.print (255, BYTE);
-            Serial.print (90, BYTE);
+            Serial.print (SERIAL_COMMAND_SET_LEFT_MOTOR, BYTE);
+            Serial.print (MOTOR_VALUE_SPECIAL_CODE_STOP, BYTE);
+            Serial.print (SERIAL_COMMAND_SET_RIGHT_MOTOR, BYTE);
+            Serial.print (MOTOR_VALUE_SPECIAL_CODE_STOP, BYTE);
             
             // Give time to send
             delay(150);
@@ -150,22 +172,41 @@ void loop()
             // If not in the dead band then call the subroutine
          
             /*
-                "mix" to calculate the values needed to move the motors with the correct speed and direction. 
-                WARNING: mix() changes the value of rightMotorVal and leftMotorVal !!!
+                "calculate_motor_values_from_normalized" to calculate the values needed to move the motors with the correct
+                speed and direction. 
+                WARNING: calculate_motor_values_from_normalized() changes the value of rightMotorVal and leftMotorVal !!!
             */
-            mix( y, x);
-            rightMotorVal = map ( rightMotorVal, NORMALIZED_RANGE_MIN, NORMALIZED_RANGE_MAX, 50, 140);
-            leftMotorVal = map ( leftMotorVal, NORMALIZED_RANGE_MIN, NORMALIZED_RANGE_MAX, 50, 140);
-        
+            calculate_motor_values_from_normalized( normalized_y, normalized_x);
+            rightMotorVal = map( 
+                rightMotorVal, 
+                NORMALIZED_RANGE_MIN, 
+                NORMALIZED_RANGE_MAX, 
+                MOTOR_VALUE_MIN, 
+                MOTOR_VALUE_MAX
+            );
+            
+            leftMotorVal = map(
+                leftMotorVal, 
+                NORMALIZED_RANGE_MIN, 
+                NORMALIZED_RANGE_MAX, 
+                MOTOR_VALUE_MIN, 
+                MOTOR_VALUE_MAX
+            );
+   
             // Send the Stop command to the other xbee (Old Comment?)
-            Serial.print (254, BYTE);
+            Serial.print (SERIAL_COMMAND_SET_LEFT_MOTOR, BYTE);
             Serial.print (leftMotorVal, BYTE);
-            Serial.print (255, BYTE);
+            
+            Serial.print (SERIAL_COMMAND_SET_RIGHT_MOTOR, BYTE);
             Serial.print (rightMotorVal, BYTE);
             
             // Give time to send
             delay(150);
         }
+    }
+    else
+    {
+        // Bad Wii Data - Send a stop?
     }
 }
     
@@ -193,6 +234,11 @@ void loop()
 #define WII_NUMBER_OF_BYTES_TO_READ  (6)
 
 //------------------- Global Variables -------------------
+
+// Wii accelerometer data
+int accel_x_axis = (WII_NUNCHUK_MIN + WII_NUNCHUK_MAX) /2 ;
+int accel_y_axis = (WII_NUNCHUK_MIN + WII_NUNCHUK_MAX) /2 ;
+int accel_z_axis = (WII_NUNCHUK_MIN + WII_NUNCHUK_MAX) /2 ;
 
 // array to store nunchuck data
 byte nunchuk_buf[WII_NUMBER_OF_BYTES_TO_READ];
@@ -349,10 +395,10 @@ char nunchuk_decode_byte (char x)
 }
 
 /*------
-    Function: nunchuk_zbutton
+    Function: get_nunchuk_zbutton
     Description: returns zbutton state: 1=pressed, 0=notpressed
 */
-int nunchuk_zbutton()
+int get_nunchuk_zbutton()
 {
     // Shift byte by 0, AND with BIT0. If the bit is set, return 0, else 1.
     return ((nunchuk_buf[5] >> 0) & 1) ? 0 : 1;
@@ -417,12 +463,12 @@ int nunchuk_accelz()
 }
 
 /*------
-    Function:  mix
-    Description: The subroutine "mix" takes the values from the joystick/accelerometer 
+    Function:  calculate_motor_values_from_normalized
+    Description: The subroutine "calculate_motor_values_from_normalized" takes the values from the joystick/accelerometer 
         and checks to see what quadrant the values are in, then calculates the 
         corresponding motor values needed to move the motors in the correct way.
 */
-void mix(int yAxis, int xAxis)
+void calculate_motor_values_from_normalized(int yAxis, int xAxis)
 {
     if (yAxis >= 0 && xAxis >= 0)
     {                                     
