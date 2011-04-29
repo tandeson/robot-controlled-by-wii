@@ -53,22 +53,6 @@ const int MOTOR_VALUE_SPECIAL_CODE_STOP = 90;
 
 //------------------- Global Variables -------------------
 
-// Variable to store the left and right Motors speed value.
-int rightMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
-int leftMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
-
-// normalized input Variables
-int normalized_x = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;                    
-int normalized_y = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;
-
-// Wii Joystick x and y axies.
-int joy_x_axis = (WII_JOYSTICK_MIN + WII_JOYSTICK_MAX) / 2;
-int joy_y_axis = (WII_JOYSTICK_MIN + WII_JOYSTICK_MAX) / 2;
-
-// Wii Button data.
-int z_button = 0;
-int c_button = 0;
-
 //------------------- Functions -------------------
 
 /*------
@@ -93,7 +77,10 @@ void loop()
     // Call the subroutine to read the data from the nunchuk, if we get new data.. do stuff.
     if (nunchuk_get_data() )
     {
-    
+        // normalized input Variables
+        int normalized_x = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;                    
+        int normalized_y = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;
+
         // This subroutine also reads the data and puts the read data into the correct variables.
         nunchuk_print_data();
         
@@ -159,13 +146,7 @@ void loop()
             // This is the deadspot
             
             // Send the Stop command to the other xbee
-            Serial.print (SERIAL_COMMAND_SET_LEFT_MOTOR, BYTE);
-            Serial.print (MOTOR_VALUE_SPECIAL_CODE_STOP, BYTE);
-            Serial.print (SERIAL_COMMAND_SET_RIGHT_MOTOR, BYTE);
-            Serial.print (MOTOR_VALUE_SPECIAL_CODE_STOP, BYTE);
-            
-            // Give time to send
-            delay(150);
+            SendNewMotorValues(MOTOR_VALUE_SPECIAL_CODE_STOP,MOTOR_VALUE_SPECIAL_CODE_STOP);
         }
         else 
         {
@@ -174,34 +155,29 @@ void loop()
             /*
                 "calculate_motor_values_from_normalized" to calculate the values needed to move the motors with the correct
                 speed and direction. 
-                WARNING: calculate_motor_values_from_normalized() changes the value of rightMotorVal and leftMotorVal !!!
             */
-            calculate_motor_values_from_normalized( normalized_y, normalized_x);
-            rightMotorVal = map( 
-                rightMotorVal, 
+            int LeftMotor = MOTOR_VALUE_SPECIAL_CODE_STOP;
+            int RightMotor = MOTOR_VALUE_SPECIAL_CODE_STOP;
+            
+            calculate_motor_values_from_normalized( normalized_y, normalized_x, &LeftMotor, &RightMotor);
+            
+            LeftMotor = map(
+                LeftMotor, 
                 NORMALIZED_RANGE_MIN, 
                 NORMALIZED_RANGE_MAX, 
                 MOTOR_VALUE_MIN, 
                 MOTOR_VALUE_MAX
             );
             
-            leftMotorVal = map(
-                leftMotorVal, 
+            RightMotor = map( 
+                RightMotor, 
                 NORMALIZED_RANGE_MIN, 
                 NORMALIZED_RANGE_MAX, 
                 MOTOR_VALUE_MIN, 
                 MOTOR_VALUE_MAX
             );
-   
-            // Send the Stop command to the other xbee (Old Comment?)
-            Serial.print (SERIAL_COMMAND_SET_LEFT_MOTOR, BYTE);
-            Serial.print (leftMotorVal, BYTE);
             
-            Serial.print (SERIAL_COMMAND_SET_RIGHT_MOTOR, BYTE);
-            Serial.print (rightMotorVal, BYTE);
-            
-            // Give time to send
-            delay(150);
+            SendNewMotorValues(LeftMotor,RightMotor);
         }
     }
     else
@@ -209,7 +185,25 @@ void loop()
         // Bad Wii Data - Send a stop?
     }
 }
+
+/*------
+    Function: SendNewMotorValues
+    Description: Sends a new Left and Right motor value to the Receive code. In this
+        case we use the XBee for this task.
+*/
+void SendNewMotorValues(int left, int right)
+{
+    // Send the new Motor Values.
+    Serial.print (SERIAL_COMMAND_SET_LEFT_MOTOR, BYTE);
+    Serial.print (left, BYTE);
+            
+    Serial.print (SERIAL_COMMAND_SET_RIGHT_MOTOR, BYTE);
+    Serial.print (right, BYTE);
     
+    // Give time to send
+    delay(150);
+}
+
 //======================================================================================================================================================================================================//
 //Do not modify!!!!!!!!
 //======================================================================================================================================================================================================//
@@ -468,30 +462,32 @@ int nunchuk_accelz()
         and checks to see what quadrant the values are in, then calculates the 
         corresponding motor values needed to move the motors in the correct way.
 */
-void calculate_motor_values_from_normalized(int yAxis, int xAxis)
+void calculate_motor_values_from_normalized(int yAxis, int xAxis,int* pMotorLeft,int* pMotorRight)
 {
+    
+    
     if (yAxis >= 0 && xAxis >= 0)
     {                                     
         // Quadrant I calculations
-        rightMotorVal = ((yAxis * yAxis) - (xAxis * xAxis))/100;           
-        leftMotorVal = (max((yAxis * yAxis),(xAxis * xAxis))/100);
+        *pMotorRight = ((yAxis * yAxis) - (xAxis * xAxis))/100;           
+        *pMotorLeft = (max((yAxis * yAxis),(xAxis * xAxis))/100);
     }
     else if (yAxis >= 0 && xAxis < 0 )
     {
         //  Quadrant II calculations      
-        rightMotorVal = (max((yAxis * yAxis),(xAxis * xAxis))/100);
-        leftMotorVal = ((yAxis * yAxis) - (xAxis * xAxis))/100;
+        *pMotorRight = (max((yAxis * yAxis),(xAxis * xAxis))/100);
+        *pMotorLeft = ((yAxis * yAxis) - (xAxis * xAxis))/100;
     }
     else if (yAxis < 0 && xAxis >= 0 )
     {
         // Quadrant IV calculations
-        rightMotorVal = ((xAxis * xAxis) - (yAxis * yAxis))/100;               
-        leftMotorVal =  - (max((yAxis * yAxis),(xAxis * xAxis))/100);                   
+        *pMotorRight = ((xAxis * xAxis) - (yAxis * yAxis))/100;               
+        *pMotorLeft =  - (max((yAxis * yAxis),(xAxis * xAxis))/100);                   
     }
     else if (yAxis < 0 && xAxis < 0)
     {
         // Quadrant III calculations
-        leftMotorVal = (- (yAxis * yAxis) + (xAxis * xAxis))/100;
-        rightMotorVal = - (max((yAxis * yAxis),(xAxis * xAxis))/100 );
+        *pMotorRight = - (max((yAxis * yAxis),(xAxis * xAxis))/100 );
+        *pMotorLeft = (- (yAxis * yAxis) + (xAxis * xAxis))/100;
     }
 }
