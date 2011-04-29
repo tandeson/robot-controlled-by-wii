@@ -53,16 +53,6 @@ const int MOTOR_VALUE_SPECIAL_CODE_STOP = 90;
 Servo leftMotor;
 Servo rightMotor;
 
-// Variable to store the Motor speed values.
-int rightMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
-int leftMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
-
-// Data read variable
-int incomingByte = 0;
-
-// LED variables
-int blinkLedArrayIndex = 0;
-
 //------------------- Functions -------------------
 
 /*------
@@ -96,9 +86,15 @@ void setup()
 */
 void loop()
 {
+    // Variable to store the Motor speed values.
+    static int rightMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
+    static int leftMotorVal = MOTOR_VALUE_SPECIAL_CODE_STOP;
+
     // are there any bytes available on the serial port??
     if (Serial.available())
     {
+        int incomingByte = 0;
+        
         // assign bytes to the variable incomingByte
         incomingByte = Serial.read();
         
@@ -134,6 +130,8 @@ void loop()
 */
 void blinkLED()
 {
+    static int blinkLedArrayIndex = 0;
+    
     if ( blinkLedArrayIndex < NUMBER_OF_LEDS )
     {
         digitalWrite(LED_pins[blinkLedArrayIndex],HIGH);
