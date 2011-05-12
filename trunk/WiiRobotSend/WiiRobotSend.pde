@@ -22,7 +22,7 @@ const int WII_NUNCHUK_MAX = 180;
 const int WII_JOYSTICK_MIN = 28;
 const int WII_JOYSTICK_MAX = 225;
 
-#define WII_BUTTON_PRESSED  (1)
+const int WII_BUTTON_PRESSED = 1;
 
 // ---- Program Constants ----
 // Normalized value range.
@@ -80,26 +80,19 @@ void loop()
         // normalized input Variables
         int normalized_x = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;                    
         int normalized_y = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;
-
-        // This subroutine also reads the data and puts the read data into the correct variables.
-        nunchuk_print_data();
-        
+  
         // Determine which data source to use.
         if (WII_BUTTON_PRESSED == get_nunchuk_zbutton())
         {
             // If the Z button is pushed then use the data from the accelerometer to control the motors.
             
-            // Get Wii Numchuck data.
-            normalized_y = nunchuk_accely();
-            normalized_x = nunchuk_accelx();
-            
-            // Check for Mix / Max values, and limit if too big or too small.
-            normalized_y = constrain(normalized_y, WII_NUNCHUK_MIN, WII_NUNCHUK_MAX);
-            normalized_x = constrain(normalized_x, WII_NUNCHUK_MIN, WII_NUNCHUK_MAX);
-    
             // map the incoming values to a symmetric scale of NORMALIZED_RANGE_MIN to NORMALIZED_RANGE_MAX
             normalized_y = map(
-                normalized_y,
+                constrain(
+                    nunchuk_accely(), 
+                    WII_NUNCHUK_MIN, 
+                    WII_NUNCHUK_MAX
+                ),
                 WII_NUNCHUK_MIN,
                 WII_NUNCHUK_MAX,
                 NORMALIZED_RANGE_MIN,
@@ -107,7 +100,11 @@ void loop()
             );
             
             normalized_x = map(
-                normalized_x,
+                constrain(
+                    nunchuk_accelx(), 
+                    WII_NUNCHUK_MIN, 
+                    WII_NUNCHUK_MAX
+                ),
                 WII_NUNCHUK_MIN,
                 WII_NUNCHUK_MAX,
                 NORMALIZED_RANGE_MIN,
@@ -116,13 +113,9 @@ void loop()
         }
         else 
         {
-            // If the Z button is not pushed then use the data from the joystick to control the motors.
-            normalized_y = nunchuk_joyy();
-            normalized_x = nunchuk_joyx();
-      
             // map the incoming values to a symmetric scale of NORMALIZED_RANGE_MIN to NORMALIZED_RANGE_MAX
             normalized_y = map(
-                normalized_y,
+                nunchuk_joyy(),
                 WII_JOYSTICK_MIN,
                 WII_JOYSTICK_MAX,
                 NORMALIZED_RANGE_MIN,
@@ -130,7 +123,7 @@ void loop()
             );
             
             normalized_x = map(
-                normalized_x,
+                nunchuk_joyx(),
                 WII_JOYSTICK_MIN,
                 WII_JOYSTICK_MAX,
                 NORMALIZED_RANGE_MIN,
@@ -302,15 +295,18 @@ void nunchuk_send_request()
 */
 
 // Return values for this funciton
-#define GET_DATA_OK  (1)
-#define GET_DATA_FAIL (0)
+const int GET_DATA_OK = 1;
+const int GET_DATA_FAIL = 0;
 
 int nunchuk_get_data()
 { 
     int bytesReadBackCount=0;
     
     // request data from nunchuck
-    Wire.requestFrom (WII_NUNCHUK_I2C_ADDRESS, WII_NUMBER_OF_BYTES_TO_READ); 
+    Wire.requestFrom (
+        WII_NUNCHUK_I2C_ADDRESS, 
+        WII_NUMBER_OF_BYTES_TO_READ
+    ); 
     
     // If there is data in the buffer then send to the arduino. 
     while (Wire.available ()) 
@@ -332,6 +328,7 @@ int nunchuk_get_data()
     return (bytesReadBackCount >= (WII_NUMBER_OF_BYTES_TO_READ - 1)) ? GET_DATA_OK  : GET_DATA_FAIL ; 
 }
 
+#if 0
 /*------
     Function: nunchuk_print_data
     Description: This subroutine will read the buffered data and put in to variables.
@@ -377,6 +374,7 @@ int nunchuk_get_data()
     if ((nunchuk_buf[5] >> 7) & 1)
       accel_z_axis += 1;
 }
+#endif // 0 - Code block commented out, unused.
 
 /*------
     Function: nunchuk_decode_byte
