@@ -13,7 +13,7 @@ const int LED_PIN_BACK = 9;
 const int LED_PIN_LEFT = 10;
 const int LED_PIN_RIGHT = 11;
 
-#define NUMBER_OF_LEDS  (4)
+const int NUMBER_OF_LEDS = 4;
 const int LED_pins[NUMBER_OF_LEDS] = {
     LED_PIN_FRONT,
     LED_PIN_BACK,
@@ -141,6 +141,6 @@ void blinkLED()
     }
 
     // Move to the next LED
-    blinkLedArrayIndex += 1;
+    blinkLedArrayIndex++;
     if (blinkLedArrayIndex >= NUMBER_OF_LEDS) blinkLedArrayIndex = 0;
 }
