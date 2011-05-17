@@ -1,0 +1,13 @@
+#labels Phase-Design
+#Notes on Wii Nunchuk
+
+= Notes on Wii Nunchuk =
+ * When Joystick centered:
+  * Raw: (x,y) = 121,125
+  * Normilzed (x,y) = -6,-2
+  * Motor (Left,Right) = 90,90
+
+ * When Joystick straight up (full forward):
+  * Raw: (x,y) = 126,219
+  * Normilzed (x,y) = -2,93
+  * Motor (Left,Right) = 133,133
