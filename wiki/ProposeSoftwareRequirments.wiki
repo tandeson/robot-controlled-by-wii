@@ -1,0 +1,20 @@
+#labels Phase-Requirements
+#Proposed new software requirements
+
+= Introduction =
+This page holds notes on requirements of the software to drive the two wheeled robot via a Wii Nunchuck.
+
+== Sending Device ==
+ * Hardware:
+  * 1x - Arduino w/ ATMEGA168
+  * 1x ProtoShield v2
+  * 1x Xbee transceiver.
+  * 1x Wiimote Nunchuck.
+ * Software
+  * Wiimote Nunchuck interface code
+   * Use either Joystick or Accelerometer to control robot.
+   * Select Joystick or Accelerometer via "Z" button.
+   * "Calibrate" sending device by pressing "C" button.
+    
+== Receiving Device ==
+ TODO
