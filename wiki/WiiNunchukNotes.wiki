@@ -4,10 +4,24 @@
 = Notes on Wii Nunchuk =
  * When Joystick centered:
   * Raw: (x,y) = 121,125
-  * Normilzed (x,y) = -6,-2
+  * Normalized (x,y) = -6,-2
   * Motor (Left,Right) = 90,90
-
  * When Joystick straight up (full forward):
   * Raw: (x,y) = 126,219
-  * Normilzed (x,y) = -2,93
+  * Normalized (x,y) = -2,93
   * Motor (Left,Right) = 133,133
+ * When Joystick full down (full reverse):
+  * Raw: (x,y) = 120,29
+  * Normalized (x,y) = -7,-99
+  * Motor (Left,Right) = 51,50
+ * When Joystick full right (spin):
+  * Raw: (x,y) = 221,130
+  * Normalized (x,y) = 95,3
+  * Motor (Left,Right) = 135,55
+ * When Joystick full left (spin):
+  * Raw: (x,y) = 29,126
+  * Normalized (x,y) = -99,-1
+  * Motor (Left,Right) = 139,50
+
+This suggest that:
+  * Raw values range from about 29 to 221 for the joystick, with a center value of 120. 
