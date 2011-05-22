@@ -1,7 +1,17 @@
 /*
     Program to gather the nunchuk data and place in a small packet to send it wirelessly to the
     receiver.
-
+    
+    /-------------\   /---------\   /------\
+    |Wii Nunchuck |-->| Arduino |-->| xBee |
+    \-------------/   \---------/   \------/
+    
+    This code deal with data from an input source (in this case a Wii Nunchuck), and uses it to
+    send left and right motor values to a slave device (via a xBee transceiver).
+    
+    Normalized values are from 100 to -100 , representing 100% to -100%.
+    
+    Initial Code based on:
     The nunchuk code was borrowed from http://www.windmeadow.com/node/42
 
     This program is like sender program 5 except the accleration values are not adjusted to the left 2 places
@@ -9,14 +19,18 @@
 */
 
 // Using the Wire library because of the two wire communication to the nunchuk.
+
+// Override the wire library i2c speed (from 100Khz to 400 Khz)
+#define TWI_FREQ 400000L
+
 #include <Wire.h>;
 
 //------------------- Constants / Defines -------------------
 
 // ---- Wii Constants ----
 // Wii Nunchuk allowable value range. (Accelerometer)
-const int WII_NUNCHUK_MIN = 80;
-const int WII_NUNCHUK_MAX = 180;
+const int WII_NUNCHUK_MIN = 320;
+const int WII_NUNCHUK_MAX = 720;
 
 // Wii Joystick allowable value range.
 const int WII_JOYSTICK_MIN = 28;
@@ -29,8 +43,13 @@ const int WII_BUTTON_PRESSED = 1;
 const int NORMALIZED_RANGE_MIN = -100;
 const int NORMALIZED_RANGE_MAX = 100;
 
-const int NORMALIZED_DEAD_ZONE_MIN = -10;
-const int NORMALIZED_DEAD_ZONE_MAX = 10;
+const int NORMALIZED_DEAD_ZONE = 10;
+
+const int GET_DATA_OK = 1;
+const int GET_DATA_FAIL = 0;
+
+// ---- Delay and watch times, in milliSeconds ----
+const unsigned long TIME_BETWEEN_GET_DATA = 100;
 
 /*
     Commands / data rates / etc
@@ -40,18 +59,28 @@ const int NORMALIZED_DEAD_ZONE_MAX = 10;
     
     ** Section Start **
 */
-#define SERIAL_DATA_SPEED_38400_BPS  (38400)
+const long SERIAL_DATA_SPEED_38400_BPS = 38400;
 
 const int SERIAL_COMMAND_SET_RIGHT_MOTOR = 255;
 const int SERIAL_COMMAND_SET_LEFT_MOTOR =   254;
 
-const int MOTOR_VALUE_MIN = 50;
-const int MOTOR_VALUE_MAX = 140;
-const int MOTOR_VALUE_SPECIAL_CODE_STOP = 90;
-
 // ** Section end **
 
 //------------------- Global Variables -------------------
+
+// Timer to control when we get new data from the Wii.
+unsigned long lastGetDataTimer;
+
+/*
+   Returns normlized data from the input device.
+   
+   pNormalizedX = pointer to the int where we will put the returned X value.
+   pNormalizedY = pointer to the int where we will put the returned Y value.
+   
+   return = 0 if there was an error, non-zero if there was no error. Note that if there was an 
+      error, the pNormalizedX and pNormalizedY values cannot be trusted.
+*/
+unsigned char getNormalizedInput(int* pNormalizedX, int* pNormalizedY);
 
 //------------------- Functions -------------------
 
@@ -64,8 +93,9 @@ void setup()
   Serial.begin(SERIAL_DATA_SPEED_38400_BPS);
  
   // Setup the Wii nunchuk power, and start communicating.
-  nunchuk_setpowerpins();
   nunchuk_init();
+  
+  lastGetDataTimer = millis();
 }
 
 /*------
@@ -74,32 +104,83 @@ void setup()
 */
 void loop()
 {
-    // Call the subroutine to read the data from the nunchuk, if we get new data.. do stuff.
+     // Input Device data.
+     int normalized_x = 0;                    
+     int normalized_y = 0;
+     
+     // Flag to signal when data needs servicing.
+     unsigned char processNewData = false;
+     
+     // Get new Wii data on a schedule.
+     if(hasTimeoutExpired(lastGetDataTimer,TIME_BETWEEN_GET_DATA))
+     {
+         if(getNormalizedInput(&normalized_x, &normalized_y))
+         {
+             // let other code know we have updated the inputs.
+             processNewData = true;
+             
+             // if we got good data, reset our counter.
+             lastGetDataTimer = millis();
+         }
+     }
+     
+     // Apply any additional formatting to our x and y data.
+     if(processNewData)
+     {     
+         // Do Any needed preprocessing of the data.
+         applyFilterToInput(&normalized_x, &normalized_y);
+         applyDeadZone(&normalized_x, &normalized_y);
+         
+         // Input Device data.
+         int motor_right = 0;                    
+         int motor_left = 0;   
+         
+         // Convert from joystick to motor values
+         convertInputToMotor(normalized_x,normalized_y,&motor_left,&motor_right);
+         
+         // Convert to non-normalized values - temporary until rec code changes.
+         motor_left = map(motor_left,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX,50,140);
+         motor_right = map(motor_right,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX,50,140);
+#if 0
+         Serial.print( "\nNew Motor Data  left=");
+         Serial.print(motor_left);
+         Serial.print(" right=");
+         Serial.print(motor_right);
+#endif         
+         // Send.
+         SendNewMotorValues(motor_left,motor_right);
+         
+         // Clear the flag since we serviced this data.
+         processNewData = false;
+     }
+}
+
+/*------
+    Function:  hasTimeoutExpired
+    Description: Helper function for timers.
+*/
+bool hasTimeoutExpired(unsigned long counter, unsigned long timeout)
+{
+    return((millis() - counter) > timeout);
+}
+
+// See function description at the top of the file.
+unsigned char getNormalizedInput(int* pNormalizedX, int* pNormalizedY)
+{
+    unsigned char didWeGetData = GET_DATA_FAIL;
+    
+    // Call the subroutine to read the data from the nunchuk, if we get new data.. process.
     if (nunchuk_get_data() )
     {
-        // normalized input Variables
-        int normalized_x = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;                    
-        int normalized_y = (NORMALIZED_RANGE_MIN + NORMALIZED_RANGE_MAX) / 2;
-  
+        didWeGetData = GET_DATA_OK;
+        
         // Determine which data source to use.
         if (WII_BUTTON_PRESSED == get_nunchuk_zbutton())
         {
             // If the Z button is pushed then use the data from the accelerometer to control the motors.
             
             // map the incoming values to a symmetric scale of NORMALIZED_RANGE_MIN to NORMALIZED_RANGE_MAX
-            normalized_y = map(
-                constrain(
-                    nunchuk_accely(), 
-                    WII_NUNCHUK_MIN, 
-                    WII_NUNCHUK_MAX
-                ),
-                WII_NUNCHUK_MIN,
-                WII_NUNCHUK_MAX,
-                NORMALIZED_RANGE_MIN,
-                NORMALIZED_RANGE_MAX
-            );
-            
-            normalized_x = map(
+            *pNormalizedX = map(
                 constrain(
                     nunchuk_accelx(), 
                     WII_NUNCHUK_MIN, 
@@ -110,73 +191,128 @@ void loop()
                 NORMALIZED_RANGE_MIN,
                 NORMALIZED_RANGE_MAX
             );
+            
+            *pNormalizedY = map(
+                constrain(
+                    nunchuk_accely(), 
+                    WII_NUNCHUK_MIN, 
+                    WII_NUNCHUK_MAX
+                ),
+                WII_NUNCHUK_MIN,
+                WII_NUNCHUK_MAX,
+                NORMALIZED_RANGE_MIN,
+                NORMALIZED_RANGE_MAX
+            );
         }
         else 
         {
+            // used for 0 offset, 
+            static int joystick_x_offset = 120;
+            static int joystick_y_offset = 120;
+            
+            // Use the 'c' button to calibrate the offset.
+            if(get_nunchuk_cbutton())
+            {
+                joystick_x_offset = nunchuk_joyx();
+                joystick_y_offset = nunchuk_joyy();
+            }
+            
             // map the incoming values to a symmetric scale of NORMALIZED_RANGE_MIN to NORMALIZED_RANGE_MAX
-            normalized_y = map(
-                nunchuk_joyy(),
-                WII_JOYSTICK_MIN,
-                WII_JOYSTICK_MAX,
+            *pNormalizedX = constrain(
+                (nunchuk_joyx() - joystick_x_offset),
+                NORMALIZED_RANGE_MIN,
+                NORMALIZED_RANGE_MAX
+            ); 
+            
+            *pNormalizedY =  constrain(
+                (nunchuk_joyy() - joystick_y_offset),
                 NORMALIZED_RANGE_MIN,
                 NORMALIZED_RANGE_MAX
             );
-            
-            normalized_x = map(
-                nunchuk_joyx(),
-                WII_JOYSTICK_MIN,
-                WII_JOYSTICK_MAX,
-                NORMALIZED_RANGE_MIN,
-                NORMALIZED_RANGE_MAX
-            );
-        }
-        
-        if(
-            (normalized_y < NORMALIZED_DEAD_ZONE_MAX) && (normalized_y > NORMALIZED_DEAD_ZONE_MIN) && 
-            (normalized_x < NORMALIZED_DEAD_ZONE_MAX) && (normalized_x > NORMALIZED_DEAD_ZONE_MIN)
-        )
-        {
-            // This is the deadspot
-            
-            // Send the Stop command to the other xbee
-            SendNewMotorValues(MOTOR_VALUE_SPECIAL_CODE_STOP,MOTOR_VALUE_SPECIAL_CODE_STOP);
-        }
-        else 
-        {
-            // If not in the dead band then call the subroutine
-         
-            /*
-                "calculate_motor_values_from_normalized" to calculate the values needed to move the motors with the correct
-                speed and direction. 
-            */
-            int LeftMotor = MOTOR_VALUE_SPECIAL_CODE_STOP;
-            int RightMotor = MOTOR_VALUE_SPECIAL_CODE_STOP;
-            
-            calculate_motor_values_from_normalized( normalized_y, normalized_x, &LeftMotor, &RightMotor);
-            
-            LeftMotor = map(
-                LeftMotor, 
-                NORMALIZED_RANGE_MIN, 
-                NORMALIZED_RANGE_MAX, 
-                MOTOR_VALUE_MIN, 
-                MOTOR_VALUE_MAX
-            );
-            
-            RightMotor = map( 
-                RightMotor, 
-                NORMALIZED_RANGE_MIN, 
-                NORMALIZED_RANGE_MAX, 
-                MOTOR_VALUE_MIN, 
-                MOTOR_VALUE_MAX
-            );
-            
-            SendNewMotorValues(LeftMotor,RightMotor);
         }
     }
     else
     {
-        // Bad Wii Data - Send a stop?
+        // if we didn't get any data, zero the x and y values in case someone uses them without checking.
+        *pNormalizedX = 0;
+        *pNormalizedY = 0;
     }
+    
+    return didWeGetData; 
+}
+
+/*------
+    Function: applyFilterToInput
+    Description: Apply a rolling average filter to the input vaules
+*/
+const unsigned char FILTER_BUFFER_SIZE = 2;
+void applyFilterToInput(int* pNormalizedX, int* pNormalizedY)
+{
+    static unsigned char index = 0;
+    static int xBuffer[FILTER_BUFFER_SIZE] = {0};
+    static int yBuffer[FILTER_BUFFER_SIZE] = {0};
+    static int xRollingFilterVal = 0;
+    static int yRollingFilterVal = 0;
+    
+    // Update our index to point to the oldest data.
+    index++;
+    if (index >= FILTER_BUFFER_SIZE) index =0;
+    
+    // remove this data from our rolling average.
+    xRollingFilterVal -= xBuffer[index] / FILTER_BUFFER_SIZE;
+    yRollingFilterVal -= yBuffer[index] / FILTER_BUFFER_SIZE;
+    
+    // Overwrite the old data with the latest
+    xBuffer[index] = *pNormalizedX;
+    yBuffer[index] = *pNormalizedY;
+    
+    // Add the new data to our rolling average.
+    xRollingFilterVal +=  xBuffer[index] / FILTER_BUFFER_SIZE;
+    yRollingFilterVal +=  yBuffer[index] / FILTER_BUFFER_SIZE;
+    
+    // Return the data via the pointers we were passed.
+    *pNormalizedX = xRollingFilterVal;
+    *pNormalizedY = yRollingFilterVal;
+}
+
+/*------
+    Function: applyDeadZone
+    Description: Apply a deadzone in the middle of the input range.
+*/
+void applyDeadZone(int* pNormalizedX, int* pNormalizedY)
+{
+    if(
+        (*pNormalizedX < NORMALIZED_DEAD_ZONE) &&
+        (*pNormalizedX > -NORMALIZED_DEAD_ZONE)
+    )
+    {
+        *pNormalizedX = 0;
+    }
+    if(
+        (*pNormalizedY < NORMALIZED_DEAD_ZONE) &&
+        (*pNormalizedY > -NORMALIZED_DEAD_ZONE)
+    )
+    {
+        *pNormalizedY = 0;
+    }
+}
+
+/*------
+    Function: convertInputToMotor
+    Description: Convert normalized x and y values and process left and right motor values.
+*/
+void  convertInputToMotor(int normalizedX, int normalizedY,int* pMotorLeft,int* pMotorRight)
+{
+    // Use the Y direction to set the forward and backward motion.
+    *pMotorRight = normalizedY;
+    *pMotorLeft = normalizedY;
+    
+    // Apply the X as a "twist" effect.
+    *pMotorRight -= normalizedX / 2 ;
+    *pMotorLeft += normalizedX / 2 ;
+    
+    *pMotorLeft = constrain(*pMotorLeft,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX);
+    *pMotorRight = constrain(*pMotorRight,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX);
 }
 
 /*------
@@ -192,40 +328,47 @@ void SendNewMotorValues(int left, int right)
             
     Serial.print (SERIAL_COMMAND_SET_RIGHT_MOTOR, BYTE);
     Serial.print (right, BYTE);
-    
-    // Give time to send
-    delay(150);
 }
 
-//======================================================================================================================================================================================================//
-//Do not modify!!!!!!!!
-//======================================================================================================================================================================================================//
-
+//------------------------------------------------------------------------------------------
 /*
     Nunchuck functions
     
     The static keyword is used to create variables that are visible to only one function. 
     However unlike local variables that get created and destroyed every time a function is called, 
     static variables persist beyond the function call, preserving their data between function calls. 
+
+    From : http://wiibrew.org/wiki/Wiimote/Extension_Controllers
+  	Bit
+Byte 	|7 	6 	5 	4 	3 	2 	1 	0
+0 	|SX<7:0>
+1 	|SY<7:0>
+2 	|AX<9:2>
+3 	|AY<9:2>
+4 	|AZ<9:2>
+5 	|AZ<1:0> 	AY<1:0> 	AX<1:0> 	BC 	BZ
+
+SX,SY are the Analog Stick X and Y positions, while AX, AY, and AZ are the 10-bit accelerometer data
 */
+const unsigned char WII_NUNCHUCK_nX_MASK  = 0x03;
+const unsigned char WII_NUNCHUCK_nX_NUM_BITS = 2;
+const unsigned char WII_NUNCHUCK_AX_SHIFT = 2;
+const unsigned char WII_NUNCHUCK_AY_SHIFT = 4;
+const unsigned char WII_NUNCHUCK_AZ_SHIFT = 6;
 
 //------------------- Constants / Defines -------------------
 
 // 3 + 14 == Analog Pin 3, Analog Pin 3 is the same as pin 17 on the arduino
-#define PWRPIN (17) 
+const unsigned char PWRPIN  = 17;
+
 // 2 + 14 == Analog Pin 2 , Analog Pin 2 is the same as pin 16 on the arduino
-#define GNDPIN (16)
+const unsigned char GNDPIN =  16;
 
-#define WII_NUNCHUK_I2C_ADDRESS   (0x52)
+const unsigned char WII_NUNCHUK_I2C_ADDRESS =  0x52;
 
-#define WII_NUMBER_OF_BYTES_TO_READ  (6)
+const unsigned char WII_NUMBER_OF_BYTES_TO_READ = 6;
 
 //------------------- Global Variables -------------------
-
-// Wii accelerometer data
-int accel_x_axis = (WII_NUNCHUK_MIN + WII_NUNCHUK_MAX) /2 ;
-int accel_y_axis = (WII_NUNCHUK_MIN + WII_NUNCHUK_MAX) /2 ;
-int accel_z_axis = (WII_NUNCHUK_MIN + WII_NUNCHUK_MAX) /2 ;
 
 // array to store nunchuck data
 byte nunchuk_buf[WII_NUMBER_OF_BYTES_TO_READ];
@@ -258,6 +401,9 @@ static void nunchuk_setpowerpins()
 */
 void nunchuk_init()
 {
+    // Make sure the hardware is properly configured.
+    nunchuk_setpowerpins();
+    
     // join i2c bus as master
     Wire.begin();
     
@@ -293,11 +439,6 @@ void nunchuk_send_request()
     Description: Receive data back from the nunchuck, returns 1 on successful read. returns 0 on failure.
                  Subroutine to read the data sent back from the nunchuk. It comes back in in 6 byte chunks.
 */
-
-// Return values for this funciton
-const int GET_DATA_OK = 1;
-const int GET_DATA_FAIL = 0;
-
 int nunchuk_get_data()
 { 
     int bytesReadBackCount=0;
@@ -321,69 +462,33 @@ int nunchuk_get_data()
         bytesReadBackCount++;
     }
     
-    // send request for next data payload If we received the 6 bytes, then go print them
+    // send request for next data payload.
     nunchuk_send_request(); 
 
     // If we got enought bytes, let the caller know.
     return (bytesReadBackCount >= (WII_NUMBER_OF_BYTES_TO_READ - 1)) ? GET_DATA_OK  : GET_DATA_FAIL ; 
 }
 
-#if 0
-/*------
-    Function: nunchuk_print_data
-    Description: This subroutine will read the buffered data and put in to variables.
-      Print the input data we have recieved :
-      accel data is 10 bits long so we read 8 bits, then we have to add on the last 2 bits.
-*/
- void nunchuk_print_data()
-{
-    static int i=0;
-    
-    int joy_x_axis = nunchuk_buf[0];
-    int joy_y_axis = nunchuk_buf[1];
-    
-    int accel_x_axis = nunchuk_buf[2];
-    int accel_y_axis = nunchuk_buf[3];
-    int accel_z_axis = nunchuk_buf[4];
-    
-    int z_button = 0;
-    int c_button = 0;
-    
-    /*
-       byte nunchuck_buf[5] contains bits for z and c buttons
-       it also contains the least significant bits for the accelerometer data
-       so we have to check each bit of byte outbuf[5]
-    */
-    if ((nunchuk_buf[5] >> 0) & 1)
-      z_button = 1;
-    if ((nunchuk_buf[5] >> 1) & 1)
-      c_button = 1;
-    
-    if ((nunchuk_buf[5] >> 2) & 1)
-      accel_x_axis += 2;
-    if ((nunchuk_buf[5] >> 3) & 1)
-      accel_x_axis += 1;
-    
-    if ((nunchuk_buf[5] >> 4) & 1)
-      accel_y_axis += 2;
-    if ((nunchuk_buf[5] >> 5) & 1)
-      accel_y_axis += 1;
-    
-    if ((nunchuk_buf[5] >> 6) & 1)
-      accel_z_axis += 2;
-    if ((nunchuk_buf[5] >> 7) & 1)
-      accel_z_axis += 1;
-}
-#endif // 0 - Code block commented out, unused.
-
 /*------
     Function: nunchuk_decode_byte
-    Description: This subroutine decodes the data coming from the nunchuk.
+    Description: helper function to decode the data coming from the nunchuk.
 */
 char nunchuk_decode_byte (char x)
 {
     x = (x ^ 0x17) + 0x17;
     return x;
+}
+
+/*------
+    Function:  process_nunchuck_accel
+    Description: helper function for processing accelromtere data for the wii nunchuck.
+*/
+int process_nunchuck_accel(unsigned char data_byte,unsigned char shift_size)
+{
+    int correctValue = nunchuk_buf[data_byte];
+    correctValue <<= WII_NUNCHUCK_nX_NUM_BITS;
+    correctValue |= ((nunchuk_buf[5] >> shift_size) & WII_NUNCHUCK_nX_MASK);
+    return correctValue;
 }
 
 /*------
@@ -393,99 +498,46 @@ char nunchuk_decode_byte (char x)
 int get_nunchuk_zbutton()
 {
     // Shift byte by 0, AND with BIT0. If the bit is set, return 0, else 1.
-    return ((nunchuk_buf[5] >> 0) & 1) ? 0 : 1;
+    return (nunchuk_buf[5] & 0x01) ? 0 : 1;
 }
 
 /*------
     Function: nunchuk_cbutton
     Description: returns zbutton state: 1=pressed, 0=notpressed
 */
-int nunchuk_cbutton()
+int get_nunchuk_cbutton()
 {
     // Shift byte by 1, AND with BIT0. If the bit is set, return 0, else 1.
-    return ((nunchuk_buf[5] >> 1) & 1) ? 0 : 1;
+    return (nunchuk_buf[5] & 0x02) ? 0 : 1;
 }
 
 /*------
     Function: nunchuk_joyx
     Description: returns value of x-axis joystick
 */
-int nunchuk_joyx()
-{
-    return nunchuk_buf[0];
-}
+int nunchuk_joyx() { return nunchuk_buf[0]; }
 
 /*------
     Function: nunchuk_joyy
     Description: returns value of y-axis joystick
 */
-int nunchuk_joyy()
-{
-    return nunchuk_buf[1];
-}
+int nunchuk_joyy() { return nunchuk_buf[1]; }
 
 /*------
     Function: nunchuk_accelx
     Description: returns value of x-axis accelerometer
 */
-int nunchuk_accelx()
-{
-    // FIXME: this leaves out 2-bits of the data
-    return nunchuk_buf[2]; 
-}
+int nunchuk_accelx() { return process_nunchuck_accel(2,WII_NUNCHUCK_AX_SHIFT);}
 
 /*------
     Function:  nunchuk_accely
     Description: returns value of y-axis accelerometer
 */
-int nunchuk_accely()
-{
-    // FIXME: this leaves out 2-bits of the data
-    return nunchuk_buf[3]; 
-}
+int nunchuk_accely() { return process_nunchuck_accel(3,WII_NUNCHUCK_AY_SHIFT); }
 
 /*------
     Function:  nunchuk_accelz
     Description: returns value of z-axis accelerometer
 */
-int nunchuk_accelz()
-{
-    // FIXME: this leaves out 2-bits of the data
-    return nunchuk_buf[4]; 
-}
+int nunchuk_accelz() { return process_nunchuck_accel(4,WII_NUNCHUCK_AZ_SHIFT); }
 
-/*------
-    Function:  calculate_motor_values_from_normalized
-    Description: The subroutine "calculate_motor_values_from_normalized" takes the values from the joystick/accelerometer 
-        and checks to see what quadrant the values are in, then calculates the 
-        corresponding motor values needed to move the motors in the correct way.
-*/
-void calculate_motor_values_from_normalized(int yAxis, int xAxis,int* pMotorLeft,int* pMotorRight)
-{
-    
-    
-    if (yAxis >= 0 && xAxis >= 0)
-    {                                     
-        // Quadrant I calculations
-        *pMotorRight = ((yAxis * yAxis) - (xAxis * xAxis))/100;           
-        *pMotorLeft = (max((yAxis * yAxis),(xAxis * xAxis))/100);
-    }
-    else if (yAxis >= 0 && xAxis < 0 )
-    {
-        //  Quadrant II calculations      
-        *pMotorRight = (max((yAxis * yAxis),(xAxis * xAxis))/100);
-        *pMotorLeft = ((yAxis * yAxis) - (xAxis * xAxis))/100;
-    }
-    else if (yAxis < 0 && xAxis >= 0 )
-    {
-        // Quadrant IV calculations
-        *pMotorRight = ((xAxis * xAxis) - (yAxis * yAxis))/100;               
-        *pMotorLeft =  - (max((yAxis * yAxis),(xAxis * xAxis))/100);                   
-    }
-    else if (yAxis < 0 && xAxis < 0)
-    {
-        // Quadrant III calculations
-        *pMotorRight = - (max((yAxis * yAxis),(xAxis * xAxis))/100 );
-        *pMotorLeft = (- (yAxis * yAxis) + (xAxis * xAxis))/100;
-    }
-}
