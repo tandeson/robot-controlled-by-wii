@@ -33,7 +33,7 @@ const int MOTOR_PIN_RIGHT = 4;
     
     ** Section Start **
 */
-#define SERIAL_DATA_SPEED_38400_BPS  (38400)
+const long SERIAL_DATA_SPEED_38400_BPS = 38400;
 
 const int SERIAL_COMMAND_SET_RIGHT_MOTOR = 255;
 const int SERIAL_COMMAND_SET_LEFT_MOTOR =   254;
