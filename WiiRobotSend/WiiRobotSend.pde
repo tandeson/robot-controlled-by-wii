@@ -49,7 +49,7 @@ const int GET_DATA_OK = 1;
 const int GET_DATA_FAIL = 0;
 
 // ---- Delay and watch times, in milliSeconds ----
-const unsigned long TIME_BETWEEN_GET_DATA = 100;
+const unsigned long TIME_BETWEEN_GET_DATA = 75;
 
 /*
     Commands / data rates / etc
@@ -114,6 +114,7 @@ void loop()
      // Get new Wii data on a schedule.
      if(hasTimeoutExpired(lastGetDataTimer,TIME_BETWEEN_GET_DATA))
      {
+         // Good Wii Data - work with it. 
          if(getNormalizedInput(&normalized_x, &normalized_y))
          {
              // let other code know we have updated the inputs.
@@ -122,6 +123,16 @@ void loop()
              // if we got good data, reset our counter.
              lastGetDataTimer = millis();
          }
+     }
+     else
+     {
+         // Bad Wii Data - Stop the Slave.
+         
+         // Send zeros if we loose communication.
+         SendNewMotorValues(0,0);
+         
+         // Try again on our next scheduled time.
+         lastGetDataTimer = millis();
      }
      
      // Apply any additional formatting to our x and y data.
@@ -141,12 +152,7 @@ void loop()
          // Convert to non-normalized values - temporary until rec code changes.
          motor_left = map(motor_left,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX,50,140);
          motor_right = map(motor_right,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX,50,140);
-#if 0
-         Serial.print( "\nNew Motor Data  left=");
-         Serial.print(motor_left);
-         Serial.print(" right=");
-         Serial.print(motor_right);
-#endif         
+       
          // Send.
          SendNewMotorValues(motor_left,motor_right);
          
@@ -288,12 +294,37 @@ void applyDeadZone(int* pNormalizedX, int* pNormalizedY)
     {
         *pNormalizedX = 0;
     }
+    else
+    {
+        // Adjust for the missing deadzone area.
+        int polarity = *pNormalizedX > 0 ? 1 : -1;
+       *pNormalizedX = map(
+           *pNormalizedX,
+           (NORMALIZED_DEAD_ZONE * polarity),
+           (NORMALIZED_RANGE_MAX * polarity),
+           1,
+           (NORMALIZED_RANGE_MAX * polarity)
+       );
+    }
+
     if(
         (*pNormalizedY < NORMALIZED_DEAD_ZONE) &&
         (*pNormalizedY > -NORMALIZED_DEAD_ZONE)
     )
     {
         *pNormalizedY = 0;
+    }
+    else
+    {
+        // Adjust for the missing deadzone area.
+        int polarity = *pNormalizedY > 0 ? 1 : -1;
+       *pNormalizedY = map(
+           *pNormalizedY,
+           (NORMALIZED_DEAD_ZONE * polarity),
+           (NORMALIZED_RANGE_MAX * polarity),
+           1,
+           (NORMALIZED_RANGE_MAX * polarity)
+       );
     }
 }
 
