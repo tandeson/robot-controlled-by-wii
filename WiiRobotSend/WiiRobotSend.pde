@@ -39,17 +39,13 @@ const int WII_JOYSTICK_MAX = 225;
 const int WII_BUTTON_PRESSED = 1;
 
 // ---- Program Constants ----
-// Normalized value range.
-const int NORMALIZED_RANGE_MIN = -100;
-const int NORMALIZED_RANGE_MAX = 100;
-
 const int NORMALIZED_DEAD_ZONE = 10;
 
 const int GET_DATA_OK = 1;
 const int GET_DATA_FAIL = 0;
 
 // ---- Delay and watch times, in milliSeconds ----
-const unsigned long TIME_BETWEEN_GET_DATA = 75;
+const unsigned long TIME_BETWEEN_GET_DATA = 50;
 
 /*
     Commands / data rates / etc
@@ -63,6 +59,10 @@ const long SERIAL_DATA_SPEED_38400_BPS = 38400;
 
 const int SERIAL_COMMAND_SET_RIGHT_MOTOR = 255;
 const int SERIAL_COMMAND_SET_LEFT_MOTOR =   254;
+
+// Normalized value range.
+const int NORMALIZED_RANGE_MIN = -100;
+const int NORMALIZED_RANGE_MAX = 100;
 
 // ** Section end **
 
@@ -114,25 +114,37 @@ void loop()
      // Get new Wii data on a schedule.
      if(hasTimeoutExpired(lastGetDataTimer,TIME_BETWEEN_GET_DATA))
      {
+         static char lastWiiDataGood = false;
+         
+         // If we lost communication with the Nunchuck, make sure if is re-configured.
+         if(false == lastWiiDataGood)
+         {
+              nunchuk_init();
+         }
+         
          // Good Wii Data - work with it. 
          if(getNormalizedInput(&normalized_x, &normalized_y))
          {
              // let other code know we have updated the inputs.
              processNewData = true;
              
+             // Record that we got good data.
+             lastWiiDataGood = true;
+             
              // if we got good data, reset our counter.
              lastGetDataTimer = millis();
          }
-     }
-     else
-     {
-         // Bad Wii Data - Stop the Slave.
-         
-         // Send zeros if we loose communication.
-         SendNewMotorValues(0,0);
-         
-         // Try again on our next scheduled time.
-         lastGetDataTimer = millis();
+         else
+         {
+             // Bad Wii Data - Stop the Slave.
+             lastWiiDataGood = false;
+             
+             // Send zeros if we loose communication.
+             SendNewMotorValues(0,0);
+             
+             // Try again on our next scheduled time.
+             lastGetDataTimer = millis();
+         }
      }
      
      // Apply any additional formatting to our x and y data.
@@ -149,10 +161,6 @@ void loop()
          // Convert from joystick to motor values
          convertInputToMotor(normalized_x,normalized_y,&motor_left,&motor_right);
          
-         // Convert to non-normalized values - temporary until rec code changes.
-         motor_left = map(motor_left,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX,50,140);
-         motor_right = map(motor_right,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX,50,140);
-       
          // Send.
          SendNewMotorValues(motor_left,motor_right);
          
@@ -177,7 +185,7 @@ unsigned char getNormalizedInput(int* pNormalizedX, int* pNormalizedY)
     
     // Call the subroutine to read the data from the nunchuk, if we get new data.. process.
     if (nunchuk_get_data() )
-    {
+    {      
         didWeGetData = GET_DATA_OK;
         
         // Determine which data source to use.
@@ -286,7 +294,7 @@ void applyFilterToInput(int* pNormalizedX, int* pNormalizedY)
     Description: Apply a deadzone in the middle of the input range.
 */
 void applyDeadZone(int* pNormalizedX, int* pNormalizedY)
-{
+{   
     if(
         (*pNormalizedX < NORMALIZED_DEAD_ZONE) &&
         (*pNormalizedX > -NORMALIZED_DEAD_ZONE)
@@ -338,9 +346,9 @@ void  convertInputToMotor(int normalizedX, int normalizedY,int* pMotorLeft,int* 
     *pMotorRight = normalizedY;
     *pMotorLeft = normalizedY;
     
-    // Apply the X as a "twist" effect.
-    *pMotorRight -= normalizedX / 2 ;
-    *pMotorLeft += normalizedX / 2 ;
+    // Apply the X as a "twist" effect. (about 40% of the calcualted value)
+    *pMotorRight -= (normalizedX * 4) / 10;
+    *pMotorLeft +=  (normalizedX * 4) / 10;
     
     *pMotorLeft = constrain(*pMotorLeft,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX);
     *pMotorRight = constrain(*pMotorRight,NORMALIZED_RANGE_MIN,NORMALIZED_RANGE_MAX);
@@ -351,8 +359,12 @@ void  convertInputToMotor(int normalizedX, int normalizedY,int* pMotorLeft,int* 
     Description: Sends a new Left and Right motor value to the Receive code. In this
         case we use the XBee for this task.
 */
-void SendNewMotorValues(int left, int right)
+void SendNewMotorValues(char left, char right)
 {
+    // Make sure we fit into a signed Char before sending.
+    left = constrain(left,-127,128);
+    right = constrain(right,-127,128);
+    
     // Send the new Motor Values.
     Serial.print (SERIAL_COMMAND_SET_LEFT_MOTOR, BYTE);
     Serial.print (left, BYTE);
