@@ -16,6 +16,8 @@
 
     This program is like sender program 5 except the accleration values are not adjusted to the left 2 places
     after the reading. This keeps the reading in a smaller range.
+    
+    I added a line here.
 */
 
 // Using the Wire library because of the two wire communication to the nunchuk.
