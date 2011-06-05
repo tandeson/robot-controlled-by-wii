@@ -30,3 +30,5 @@ This suggest that:
   * Values appear to have 1 - 3 counts of noise.
   * Not sure that values are the same for all Wiimote Nunchucks.
   * Possible to get approximately a +/- 100 count value just by subtracting off the midpoint, maybe?
+
+* Add another bullet point.
